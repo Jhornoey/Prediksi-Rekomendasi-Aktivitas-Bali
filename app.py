@@ -31,7 +31,7 @@ SUN_MODE = "effective"
 
 # ---- Model ML config ----------------------------------------------------------
 # Lokasi file model pickle & label keluaran (urutan penting!)
-MODEL_PATH = r"C:\Users\LENOVO\OneDrive - Universitas Tarumanagara\Documents\Sem 7\Program_Raynaldo\multi_rf_model.pkl"
+MODEL_PATH = "multi_rf_model.pkl"
 LABEL_NAMES = os.getenv("ML_LABEL_NAMES", "pantai,hiking,snorkeling,rafting").split(",")
 
 # Model & fitur training di-*lazy load* saat pertama dipakai

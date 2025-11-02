@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+
+{% block head %}
+  <!-- [HEAD] Styles khusus halaman wisata -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='beaches.css') }}">
+{% endblock %}
+
+{% block content %}
+
+<!-- =========================================================
+ [1] PREMIUM HEADER (Hero with gradient + waktu sekarang)
+     - Tampilkan judul halaman & waktu (nowtime) dari backend
+     - Class utama: .premium-header, .gradient-card
+========================================================= -->
+<section class="premium-header mb-4">
+  <div class="gradient-card p-5 text-white position-relative overflow-hidden">
+    <div class="bg-animation"></div>
+    <div class="position-relative z-2">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+        <div>
+          <h2 class="display-5 fw-bold mb-2">🏖️ Wisata Bali</h2>
+          <p class="lead mb-0 opacity-90">Temukan destinasi sempurna berdasarkan cuaca real time</p>
+        </div>
+
+        <!-- Badge waktu realtime -->
+        <div class="text-end">
+          <div class="badge bg-white bg-opacity-25 backdrop-blur px-3 py-2">
+            <i class="bi bi-clock"></i> {{ nowtime }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- =========================================================
+ [2] ACTIVITY SELECTOR (Pill radio untuk kategori aktivitas)
+     - ID: #activity-selector (dipakai JS untuk binding pilihan)
+     - Value yang dipakai JS: pantai | hiking | snorkeling | rafting
+     - Catatan: label menampilkan jumlah lokasi per kategori (UI)
+========================================================= -->
+<section class="activity-selector-section mb-4">
+  <div class="glass-card p-4">
+
+    <!-- Header kecil + hint auto-lokasi -->
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-3 mb-3">
+      <h5 class="fw-bold mb-0 d-flex align-items-center gap-2">
+        <span class="activity-icon">🎯</span>
+        Pilih Aktivitas Favorit
+      </h5>
+      <div class="text-muted small">
+        <i class="bi bi-info-circle"></i> Lokasi akan berubah otomatis
+      </div>
+    </div>
+
+    <!-- Kumpulan pill radio -->
+    <div class="activity-pills" id="activity-selector">
+      <!-- Pantai (default: checked) -->
+      <input type="radio" class="btn-check" name="activity" id="activity-pantai" value="pantai" checked>
+      <label class="activity-pill pantai-pill" for="activity-pantai">
+        <span class="pill-icon">🏖️</span>
+        <span class="pill-text">
+          <strong>Pantai</strong>
+          <small>4 Lokasi</small>
+        </span>
+      </label>
+
+      <!-- Hiking -->
+      <input type="radio" class="btn-check" name="activity" id="activity-hiking" value="hiking">
+      <label class="activity-pill hiking-pill" for="activity-hiking">
+        <span class="pill-icon">🥾</span>
+        <span class="pill-text">
+          <strong>Hiking</strong>
+          <small>4 Gunung</small>
+        </span>
+      </label>
+
+      <!-- Snorkeling -->
+      <input type="radio" class="btn-check" name="activity" id="activity-snorkeling" value="snorkeling">
+      <label class="activity-pill snorkeling-pill" for="activity-snorkeling">
+        <span class="pill-icon">🤿</span>
+        <span class="pill-text">
+          <strong>Snorkeling</strong>
+          <small>4 Spot</small>
+        </span>
+      </label>
+
+      <!-- Rafting -->
+      <input type="radio" class="btn-check" name="activity" id="activity-rafting" value="rafting">
+      <label class="activity-pill rafting-pill" for="activity-rafting">
+        <span class="pill-icon">🚣‍♂️</span>
+        <span class="pill-text">
+          <strong>Rafting</strong>
+          <small>4 Sungai</small>
+        </span>
+      </label>
+    </div>
+  </div>
+</section>
+
+<!-- =========================================================
+ [3] GLOBAL STATES: LOADING & ERROR
+     - #loading-state: tampil sebelum data siap
+     - #error-state: tampil jika fetch/olah data gagal
+========================================================= -->
+
+<!-- Loading state -->
+<div id="loading-state" class="text-center py-5">
+  <div class="premium-loader mb-4">
+    <div class="loader-ring"></div>
+    <div class="loader-ring"></div>
+    <div class="loader-ring"></div>
+    <div class="loader-icon">🌊</div>
+  </div>
+  <h5 class="fw-bold mb-2">Memuat Data Cuaca...</h5>
+  <p class="text-muted">Menganalisis kondisi terkini untuk rekomendasi terbaik</p>
+</div>
+
+<!-- Error state (disembunyikan default) -->
+<div id="error-state" class="d-none">
+  <div class="glass-card p-4 border-danger">
+    <div class="d-flex align-items-start gap-3">
+      <div class="error-icon">❌</div>
+      <div class="flex-grow-1">
+        <h6 class="fw-bold mb-2">Gagal Memuat Data</h6>
+        <!-- Pesan error diisi via JS -->
+        <p id="error-message" class="mb-0 text-muted"></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================
+ [4] MAIN CONTENT WRAPPER
+     - Dibuka saat data siap (JS: hapus .d-none)
+     - Berisi: summary cards, stats bar, comparison table
+========================================================= -->
+<div id="main-content" class="d-none">
+
+  <!-- -------------------------------------------------------
+   [4.1] SUMMARY CARDS (ringkasan tiap lokasi)
+         - Target render oleh JS
+         - Container: #summary-cards
+  -------------------------------------------------------- -->
+  <div class="row g-4 mb-4" id="summary-cards"></div>
+
+  <!-- -------------------------------------------------------
+   [4.2] STATS BAR (angka ringkas: lokasi, hari forecast, prediksi ML)
+         - ID penting untuk update dinamis: #stat-locations, #stat-days, #stat-predictions
+  -------------------------------------------------------- -->
+  <div class="stats-bar glass-card p-4 mb-4">
+    <div class="row g-3 text-center">
+      <div class="col-6 col-md-4">
+        <div class="stat-item">
+          <div class="stat-icon">📍</div>
+          <div class="stat-value" id="stat-locations">4</div>
+          <div class="stat-label">Lokasi</div>
+        </div>
+      </div>
+
+      <div class="col-6 col-md-4">
+        <div class="stat-item">
+          <div class="stat-icon">📅</div>
+          <div class="stat-value" id="stat-days">5</div>
+          <div class="stat-label">Hari Prakiraan</div>
+        </div>
+      </div>
+
+      <div class="col-6 col-md-4">
+        <div class="stat-item">
+          <div class="stat-icon">🤖</div>
+          <div class="stat-value" id="stat-predictions">0</div>
+          <div class="stat-label">Prediksi ML</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- -------------------------------------------------------
+   [4.3] COMPARISON TABLE (perbandingan detail per hari)
+         - Tabel 5 kolom hari (HARI INI + H+1..H+4)
+         - Header hari memiliki ID spesifik agar mudah diisi JS:
+           #day-header-0..4
+         - Body tabel diisi JS melalui #table-body
+  -------------------------------------------------------- -->
+  <div class="glass-card mb-4">
+    <div class="card-header-premium p-4">
+      <h5 class="fw-bold mb-0 d-flex align-items-center gap-2">
+        <span class="header-icon">📊</span> Perbandingan Detail
+      </h5>
+    </div>
+
+    <div class="table-responsive">
+      <table class="premium-table" id="comparison-table">
+        <thead>
+          <tr>
+            <th class="location-col">
+              <div class="th-content">
+                <i class="bi bi-geo-alt"></i> Lokasi
+              </div>
+            </th>
+            <th class="text-center today-col" id="day-header-0">HARI INI</th>
+            <th class="text-center" id="day-header-1">H+1</th>
+            <th class="text-center" id="day-header-2">H+2</th>
+            <th class="text-center" id="day-header-3">H+3</th>
+            <th class="text-center" id="day-header-4">H+4</th>
+          </tr>
+        </thead>
+
+        <!-- Baris data lokasi di-inject oleh JS -->
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================
+ [5] MODAL DETAIL (detail cuaca per lokasi/hari)
+     - ID trigger: #detailModal
+     - Judul diisi ke #modal-title, konten ke #modal-body via JS
+========================================================= -->
+<div class="modal fade" id="detailModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-xl">
+    <div class="modal-content glass-modal">
+      <div class="modal-header border-0">
+        <h5 class="modal-title fw-bold" id="modal-title">Detail Cuaca</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Tutup"></button>
+      </div>
+
+      <!-- Konten detail di-render dinamis -->
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+  <!-- [SCRIPTS] Logika halaman wisata (fetch, render, events) -->
+  <script src="{{ url_for('static', filename='beaches.js') }}" defer></script>
+{% endblock %}

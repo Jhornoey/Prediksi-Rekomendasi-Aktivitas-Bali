@@ -1,5 +1,4 @@
-/* === 1) TOKENS & BASE === */
-/* Variabel global untuk konsistensi gaya */
+/* 1. TOKENS & BASE. Variabel global untuk konsistensi gaya */
 :root {
   --radius-xxl: 24px;
   --shadow-soft: 0 12px 40px rgba(16, 24, 40, 0.08);
@@ -20,8 +19,7 @@
   }
 }
 
-/* === 2) BASE LAYOUT (digunakan di base.html) === */
-/* Latar belakang utama lembut pada <body class="bg-grad"> */
+/* 2. BASE LAYOUT (digunakan di base.html). Latar belakang utama lembut pada <body class="bg-grad"> */
 .bg-grad {
   min-height: 100vh;
   background:
@@ -42,8 +40,7 @@
 /* Utilitas bayangan lembut */
 .shadow-soft { box-shadow: var(--shadow-soft); }
 
-/* === 3) RESPONSIVE GRID HELPERS (opsional) === */
-/* 5 kolom (20%) pada layar besar */
+/* 3. RESPONSIVE GRID HELPERS. 5 kolom (20%) pada layar besar */
 .col-lg-2-4 {
   flex: 0 0 auto;
   width: 20%;
@@ -54,8 +51,7 @@
   .col-lg-2-4 { width: 50%; }
 }
 
-/* === 4) ACCESSIBILITY UTILITIES === */
-/* Hanya untuk screen reader */
+/* 4. ACCESSIBILITY UTILITIES Hanya untuk screen reader */
 .sr-only {
   position: absolute !important;
   width: 1px; height: 1px;

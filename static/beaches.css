@@ -11,7 +11,7 @@
   --glass-border: rgba(255, 255, 255, 0.18);
 }
 
-/* Latar halaman utama dan font global */
+/* Latar halaman utama dan font global */ */
 body {
   background: var(--primary-gradient);
   min-height: 100vh;
@@ -87,7 +87,7 @@ body {
   overflow: hidden;
 }
 
-/* Efek kilau geser saat hover pill */
+/* Efek kilau saat hover pill */
 .activity-pill::before {
   content: '';
   position: absolute;
@@ -135,7 +135,7 @@ body {
   margin: 0 auto;
 }
 
-/* Tiga cincin berputar */
+/* Tiga cincin berputar saat loading */
 .loader-ring {
   position: absolute;
   width: 100%; height: 100%;
@@ -153,10 +153,10 @@ body {
   border-top-color:#f093fb;animation-delay:-1s;
 }
 
-/* Putaran loader */
+/* Putaran loader*/
 @keyframes spin { 0%{transform:rotate(0);}100%{transform:rotate(360deg);} }
 
-/* Ikon tengah pada loader (mis. emoji) */
+/* Ikon tengah pada loader*/
 .loader-icon {
   position: absolute;
   top: 50%; left: 50%;
@@ -173,7 +173,7 @@ body {
 
 /* =========================================================
    6. SUMMARY CARDS
-   - Kartu ringkasan per lokasi (berisi progress ring).
+   - Kartu ringkasan per lokasi & progress ring.
 ========================================================= */
 .summary-card {
   background:#fff;
@@ -186,10 +186,10 @@ body {
 }
 .summary-card:hover { transform: translateY(-8px); box-shadow:0 12px 40px rgba(0,0,0,0.15); }
 
-/* Judul lokasi pada card */
+/* Judul lokasi pada card*/
 .location-name { font-size:1.1rem; font-weight:700; margin-bottom:1.5rem; color:#333; }
 
-/* Wadah lingkaran progress */
+/* Wadah lingkaran progress*/
 .score-circle { position:relative; width:120px; height:120px; margin:0 auto 1.5rem; }
 
 /* SVG ring diputar agar mulai dari atas */
@@ -219,7 +219,7 @@ body {
 
 /* =========================================================
    7. STATS BAR
-   - Bilah statistik singkat (jumlah lokasi, hari, prediksi) jika dipakai.
+   - Bilah statistik singkat (jumlah lokasi, hari, prediksi).
 ========================================================= */
 .stats-bar { background:linear-gradient(135deg,rgba(255,255,255,0.95),rgba(255,255,255,0.9)); }
 .stat-item { padding:1rem; text-align:center; }
@@ -269,7 +269,7 @@ body {
 .badge-good { background:linear-gradient(135deg,#ffd89b 0%,#19547b 100%); color:#fff; }
 .badge-poor { background:var(--warning-gradient); color:#fff; }
 
-/* Info cuaca ringkas dalam sel (temp/rain/sunshine) */
+/* Info cuaca ringkas dalam sel harian (temp/rain/sunshine) */
 .weather-info {
   display:flex;
   flex-direction:column;
@@ -345,7 +345,7 @@ body {
   position:relative;
 }
 
-/* Lencana kecil “HARI INI” di pojok */
+/* Lencana kecil “HARI INI” di pojok kanan atas */
 .today-badge {
   position:absolute;
   top:8px; right:8px;
@@ -390,8 +390,8 @@ body {
 .summary-card, .glass-card { animation: fadeInUp 0.6s ease-out; }
 
 /* =========================================================
-   13. PROGRESS RING (Lingkaran Persentase Hari Layak)
-   - Dimensi & tipografi ring di summary card.
+   13. PROGRESS RING
+   Dimensi & tipografi ring di summary card.
 ========================================================= */
 .progress-ring {
   width: 120px;
@@ -430,9 +430,9 @@ body {
 }
 
 /* =========================================================
-   TABEL PERBANDINGAN DETAIL (CENTERED)
-   - Alignment konten tabel agar rapi (tengah),
-     kecuali kolom lokasi tetap rata kiri.
+   TABEL PERBANDINGAN DETAIL
+   Alignment konten tabel agar rapi (tengah),
+   kecuali kolom lokasi tetap rata kiri.
 ========================================================= */
 .premium-table th,
 .premium-table td {
@@ -463,7 +463,7 @@ body {
 
 /* =========================================================
    NAMA LOKASI DI KOLOM PERTAMA
-   - Gaya tipografi untuk nama lokasi dan meta (sunrise-sunset).
+   Gaya tipografi untuk nama lokasi dan meta (sunrise-sunset).
 ========================================================= */
 .location-name-badge {
   font-weight: 700;     /* Membuat teks lokasi tebal */

@@ -1,37 +1,26 @@
 'use strict';
-/* ============================================================
- * [CONFIG & STATE] — Konfigurasi tampilan dan state global
- * ============================================================
- */
+/* [CONFIG & STATE] Konfigurasi tampilan dan state global*/
 
-/**
- * Mode ring pada summary:
- *  - 'prob' : tampilkan rata-rata probabilitas ML (%)
- *  - 'days' : tampilkan rasio hari layak (x/5)
- */
+/* Mode ring pada summary:
+ 'prob' : tampilkan rata-rata probabilitas ML (%)
+ 'days' : tampilkan rasio hari layak (x/5) */
 const SUMMARY_MODE = 'days';
 
-/** Keliling stroke untuk progress ring (r = 54) */
+/* Keliling stroke untuk progress ring (r = 54)*/
 const TOTAL_STROKE = 339.3;
 
-/** Aktivitas saat ini (sinkron dengan radio input) */
+/* Aktivitas saat ini (sinkron dengan radio input)*/
 let currentActivity = 'pantai';
 
-/** Cache response per aktivitas agar switching cepat dan hemat request */
+/* Cache response per aktivitas agar switching cepat dan hemat request*/
 const cachedData = Object.create(null);
 
-/* ============================================================
- * [DOM HELPERS] — Utilitas untuk akses elemen
- * ============================================================
- */
+/* [DOM HELPERS] Utilitas untuk akses elemen*/
 const $  = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => root.querySelectorAll(sel);
 const byId = (id) => document.getElementById(id);
 
-/* ============================================================
- * [UTILITIES] — Fungsi kecil lintas-komponen
- * ============================================================
- */
+/* [UTILITIES] Fungsi kecil lintas-komponen*/
 
 /**
  * Tentukan kelas badge berdasarkan probabilitas (0..1)
@@ -54,10 +43,7 @@ function formatDate(isoStr) {
   return `${days[d.getDay()]}, ${d.getDate()} ${m[d.getMonth()]}`;
 }
 
-/* ============================================================
- * [RENDER — SUMMARY CARDS] Progress ring per lokasi
- * ============================================================
- */
+/* [RENDER SUMMARY CARDS] Progress ring per lokasi */
 
 /**
  * Render kartu ringkasan (progress ring) per lokasi.
@@ -94,7 +80,7 @@ function populateSummaryCards(locations) {
     let layakDays   = loc.summary?.days_ok ?? 0;
     let avgProbaPct = loc.summary ? Math.round((loc.summary.avg_proba || 0) * 100) : 0;
 
-    // Fallback jika backend lama (tanpa .summary)
+    // Fallback jika backend lama
     if (loc.summary == null) {
       let sumProba = 0, nProba = 0;
       layakDays = 0;
@@ -143,7 +129,7 @@ function populateSummaryCards(locations) {
       </div>`);
   });
 
-  // Animasi ring berdasarkan teks di tengah (satu sumber kebenaran)
+  // Animasi ring berdasarkan teks di tengah  
   requestAnimationFrame(() => {
     c.querySelectorAll('.summary-card').forEach(card => {
       const txt = card.querySelector('.score-number')?.textContent?.trim() ?? '';
@@ -163,32 +149,29 @@ function populateSummaryCards(locations) {
     });
   });
 
-  // Update statistik kecil di atas (gunakan lokasi pertama yang valid)
+  // Update statistik kecil di atas
   const locOk = locations.find(l => l?.summary?.days_total || (l?.days?.length > 0));
   byId('stat-locations').textContent   = String(locations.length);
   byId('stat-days').textContent        = String(locOk?.summary?.days_total ?? 5);
   byId('stat-predictions').textContent = String(locations.length * (locOk?.summary?.days_total ?? 5) * 4); // 4 label ML
 }
 
-/* ============================================================
- * [RENDER — HEADER TANGGAL] Konsistensi kolom "HARI INI"
- * ============================================================
- */
+/* [RENDER HEADER TANGGAL] Konsistensi kolom "HARI INI"*/
 
-/** Ambil array ISO date untuk header H0..H4 dari lokasi pertama yang valid */
+/* Ambil array ISO date untuk header H0..H4 dari lokasi pertama yang valid */
 function getHeaderDates(locations) {
   const first = locations.find(l => l?.ok && Array.isArray(l.days) && l.days.length);
   return first ? first.days.slice(0, 5).map(d => d.date_iso) : [];
 }
 
-/** Cari index "HARI INI" dari lokasi pertama yang valid (fallback 0) */
+/* Cari index "HARI INI" dari lokasi pertama yang valid (fallback 0) */
 function getTodayIndex(locations) {
   const first = locations.find(l => l?.ok && Array.isArray(l.days));
   const idx = first ? first.days.findIndex(d => d && d.is_today) : -1;
   return idx >= 0 ? idx : 0;
 }
 
-/** Template header tanggal */
+/* Template header tanggal */
 function headerLabel(iso, isToday) {
   const d = new Date(iso);
   const days = ['Min','Sen','Sel','Rab','Kam','Jum','Sab'];
@@ -199,13 +182,9 @@ function headerLabel(iso, isToday) {
     : `<div class="th-content">${tanggal}</div>`;
 }
 
-/* ============================================================
- * [RENDER — TABEL HARIAN] Cell & Baris per lokasi
- * ============================================================
- */
+/* [RENDER TABEL HARIAN] Cell & Baris per lokasi */
 
-/**
- * Buat cell tabel harian (prediksi + ringkas cuaca + tombol Detail)
+/** Buat cell tabel harian (prediksi + ringkas cuaca + tombol Detail)
  * @param {Object} day
  * @param {boolean} isToday
  * @returns {string} HTML string
@@ -243,8 +222,7 @@ function createWeatherCell(day, isToday = false) {
     </td>`;
 }
 
-/**
- * Render tabel perbandingan: sejajarkan header & kolom "HARI INI"
+/** Render tabel perbandingan: sejajarkan header & kolom "HARI INI"
  * @param {Array<Object>} locations
  */
 function populateComparisonTable(locations) {
@@ -288,13 +266,9 @@ function populateComparisonTable(locations) {
   });
 }
 
-/* ============================================================
- * [MODAL] — Detail harian
- * ============================================================
- */
+/* [MODAL]  Detail harian */
 
-/**
- * Buka modal detail untuk 1 hari terpilih
+/** Buka modal detail untuk 1 hari terpilih
  * @param {string} dateIso
  * @param {Object} dayData
  */
@@ -349,15 +323,9 @@ function showDayDetails(dateIso, dayData) {
 // Expose agar bisa dipanggil dari onclick HTML
 window.showDayDetails = showDayDetails;
 
-/* ============================================================
- * [DATA] — Fetch & orchestrate render
- * ============================================================
- */
+/* [DATA] Fetch & orchestrate render */
 
-/**
- * Ambil data dari backend untuk aktivitas saat ini,
- * perlihatkan loading/error state, lalu render komponen.
- */
+/** Ambil data dari backend untuk aktivitas saat ini, perlihatkan loading/error state, lalu render komponen */
 async function loadBeachesData() {
   const loadingEl = byId('loading-state');
   const errorEl   = byId('error-state');
@@ -387,8 +355,7 @@ async function loadBeachesData() {
   }
 }
 
-/**
- * Render ulang semua komponen UI yang bergantung pada data lokasi
+/** Render ulang semua komponen UI yang bergantung pada data lokasi
  * @param {Array<Object>} [locations]
  */
 function renderAllComponents(locations) {
@@ -401,16 +368,13 @@ function renderAllComponents(locations) {
   populateComparisonTable(locations);
 }
 
-/* ============================================================
- * [INIT] — Hook awal saat DOM siap
- * ============================================================
- */
+/* [INIT] Hook awal saat DOM siap */
 
 document.addEventListener('DOMContentLoaded', () => {
   // Fetch pertama
   loadBeachesData();
 
-  // Ganti aktivitas ⇒ render dari cache bila ada, atau fetch baru
+  // Ganti aktivitas: render dari cache bila ada, atau fetch baru
   $$('input[name="activity"]').forEach(radio => {
     radio.addEventListener('change', async function () {
       currentActivity = this.value;

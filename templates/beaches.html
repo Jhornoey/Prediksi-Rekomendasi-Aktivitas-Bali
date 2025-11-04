@@ -7,11 +7,8 @@
 
 {% block content %}
 
-<!-- =========================================================
- [1] PREMIUM HEADER (Hero with gradient + waktu sekarang)
-     - Tampilkan judul halaman & waktu (nowtime) dari backend
-     - Class utama: .premium-header, .gradient-card
-========================================================= -->
+<!--1. PREMIUM HEADER (Hero with gradient + waktu sekarang), Tampilkan judul halaman & waktu (nowtime) dari backend
+Class utama: .premium-header, .gradient-card-->
 <section class="premium-header mb-4">
   <div class="gradient-card p-5 text-white position-relative overflow-hidden">
     <div class="bg-animation"></div>
@@ -33,12 +30,8 @@
   </div>
 </section>
 
-<!-- =========================================================
- [2] ACTIVITY SELECTOR (Pill radio untuk kategori aktivitas)
-     - ID: #activity-selector (dipakai JS untuk binding pilihan)
-     - Value yang dipakai JS: pantai | hiking | snorkeling | rafting
-     - Catatan: label menampilkan jumlah lokasi per kategori (UI)
-========================================================= -->
+<!--2. ACTIVITY SELECTOR (Pill radio untuk kategori aktivitas), ID: #activity-selector (dipakai JS untuk binding pilihan)
+Value yang dipakai JS: pantai | hiking | snorkeling | rafting, Catatan: label menampilkan jumlah lokasi per kategori (UI)-->
 <section class="activity-selector-section mb-4">
   <div class="glass-card p-4">
 
@@ -55,7 +48,7 @@
 
     <!-- Kumpulan pill radio -->
     <div class="activity-pills" id="activity-selector">
-      <!-- Pantai (default: checked) -->
+      <!-- Pantai-->
       <input type="radio" class="btn-check" name="activity" id="activity-pantai" value="pantai" checked>
       <label class="activity-pill pantai-pill" for="activity-pantai">
         <span class="pill-icon">🏖️</span>
@@ -98,11 +91,8 @@
   </div>
 </section>
 
-<!-- =========================================================
- [3] GLOBAL STATES: LOADING & ERROR
-     - #loading-state: tampil sebelum data siap
-     - #error-state: tampil jika fetch/olah data gagal
-========================================================= -->
+<!--3. GLOBAL STATES: LOADING & ERROR, #loading-state: tampil sebelum data siap, 
+#error-state: tampil jika fetch/olah data gagal-->
 
 <!-- Loading state -->
 <div id="loading-state" class="text-center py-5">
@@ -116,7 +106,7 @@
   <p class="text-muted">Menganalisis kondisi terkini untuk rekomendasi terbaik</p>
 </div>
 
-<!-- Error state (disembunyikan default) -->
+<!-- Error state-->
 <div id="error-state" class="d-none">
   <div class="glass-card p-4 border-danger">
     <div class="d-flex align-items-start gap-3">
@@ -130,24 +120,13 @@
   </div>
 </div>
 
-<!-- =========================================================
- [4] MAIN CONTENT WRAPPER
-     - Dibuka saat data siap (JS: hapus .d-none)
-     - Berisi: summary cards, stats bar, comparison table
-========================================================= -->
+<!--4. MAIN CONTENT WRAPPER, Dibuka saat data siap, Berisi: summary cards, stats bar, comparison table-->
 <div id="main-content" class="d-none">
 
-  <!-- -------------------------------------------------------
-   [4.1] SUMMARY CARDS (ringkasan tiap lokasi)
-         - Target render oleh JS
-         - Container: #summary-cards
-  -------------------------------------------------------- -->
+  <!--SUMMARY CARDS ringkasan tiap lokasi, Target render oleh JS, Container: #summary-cards-->
   <div class="row g-4 mb-4" id="summary-cards"></div>
 
-  <!-- -------------------------------------------------------
-   [4.2] STATS BAR (angka ringkas: lokasi, hari forecast, prediksi ML)
-         - ID penting untuk update dinamis: #stat-locations, #stat-days, #stat-predictions
-  -------------------------------------------------------- -->
+  <!--STATS BAR angka ringkasan: lokasi, hari forecast, prediksi ML-->
   <div class="stats-bar glass-card p-4 mb-4">
     <div class="row g-3 text-center">
       <div class="col-6 col-md-4">
@@ -176,13 +155,8 @@
     </div>
   </div>
 
-  <!-- -------------------------------------------------------
-   [4.3] COMPARISON TABLE (perbandingan detail per hari)
-         - Tabel 5 kolom hari (HARI INI + H+1..H+4)
-         - Header hari memiliki ID spesifik agar mudah diisi JS:
-           #day-header-0..4
-         - Body tabel diisi JS melalui #table-body
-  -------------------------------------------------------- -->
+  <!--COMPARISON TABLE perbandingan detail per hari, Tabel 5 kolom hari HARI INI sampai H+4
+  Header hari memiliki ID spesifik agar mudah diisi JS:, #day-header-0..4, Body tabel diisi JS melalui #table-body-->
   <div class="glass-card mb-4">
     <div class="card-header-premium p-4">
       <h5 class="fw-bold mb-0 d-flex align-items-center gap-2">
@@ -214,11 +188,8 @@
   </div>
 </div>
 
-<!-- =========================================================
- [5] MODAL DETAIL (detail cuaca per lokasi/hari)
-     - ID trigger: #detailModal
-     - Judul diisi ke #modal-title, konten ke #modal-body via JS
-========================================================= -->
+<!--5. MODAL DETAIL detail cuaca per lokasi/hari, ID trigger: #detailModal, Judul diisi ke #modal-title, 
+konten ke #modal-body via JS-->
 <div class="modal fade" id="detailModal" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered modal-xl">
     <div class="modal-content glass-modal">
@@ -236,6 +207,6 @@
 {% endblock %}
 
 {% block scripts %}
-  <!-- [SCRIPTS] Logika halaman wisata (fetch, render, events) -->
+  <!-- [SCRIPTS] Logika halaman wisata fetch, render, events -->
   <script src="{{ url_for('static', filename='beaches.js') }}" defer></script>
 {% endblock %}

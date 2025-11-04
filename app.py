@@ -8,9 +8,7 @@ import requests
 import pandas as pd
 from dotenv import load_dotenv
 
-# =============================================================================
-# 0) APLIKASI & KONFIGURASI GLOBAL
-# =============================================================================
+# APLIKASI & KONFIGURASI GLOBAL
 
 # Memuat variabel lingkungan dari .env (API key, dll)
 load_dotenv()
@@ -18,69 +16,26 @@ load_dotenv()
 # Inisialisasi aplikasi Flask
 app = Flask(__name__)
 
-# ---- OpenWeather config (digunakan oleh seluruh modul) -----------------------
+# OpenWeather config
 API_KEY = os.getenv("OPENWEATHER_API_KEY", "aef2fdd2aa915a9a7a7a7e3835c66468")
 UNITS = "metric"      # gunakan °C, m/s dari OpenWeather
 LANG = "id"           # respons deskriptif bahasa Indonesia
 DEFAULT_PLACE = os.getenv("DEFAULT_PLACE", "Bali")
 
-# ---- Mode perhitungan sunshine ------------------------------------------------
-# "effective": jam siang * (1 - cloud) per slot 3 jam (realistis terhadap awan)
-# "daylength": panjang siang murni (abaikan awan)
+# Mode perhitungan sunshine
+# "effective": jam siang * (1 - cloud) per slot 3 jam
+# "daylength": panjang siang murni
 SUN_MODE = "effective"
 
-# ---- Model ML config ----------------------------------------------------------
-# 🔥 DIUBAH: Gunakan path relatif dan handle download dari URL
-MODEL_FILENAME = "multi_rf_model.pkl"
-MODEL_PATH = os.path.join(os.path.dirname(__file__), MODEL_FILENAME)
-MODEL_URL = os.getenv("MODEL_URL")  # 🔥 DIUBAH: URL untuk download model
-
+# Konfigurasi Model ML
+MODEL_PATH = "multi_rf_model.pkl"
 LABEL_NAMES = os.getenv("ML_LABEL_NAMES", "pantai,hiking,snorkeling,rafting").split(",")
 
-# Model & fitur training di-*lazy load* saat pertama dipakai
+# Model & fitur
 _model = None
 _model_feature_names = None
 
-# 🔥 DIUBAH: Fungsi untuk download model jika tidak ada
-def ensure_model_exists():
-    """Pastikan model file ada, download jika diperlukan"""
-    if not os.path.exists(MODEL_PATH) and MODEL_URL:
-        try:
-            print("Downloading model from:", MODEL_URL)
-            response = requests.get(MODEL_URL, timeout=30)
-            response.raise_for_status()
-            with open(MODEL_PATH, "wb") as f:
-                f.write(response.content)
-            print("Model downloaded successfully")
-        except Exception as e:
-            print(f"Model download failed: {e}")
-            # 🔥 DIUBAH: Buat model dummy untuk testing
-            create_dummy_model()
-    return os.path.exists(MODEL_PATH)
-
-# 🔥 DIUBAH: Fungsi buat model dummy jika download gagal
-def create_dummy_model():
-    """Buat model dummy untuk testing"""
-    try:
-        from sklearn.ensemble import RandomForestClassifier
-        import numpy as np
-        
-        print("Creating dummy model for testing...")
-        X_dummy = np.random.rand(10, 9)
-        y_dummy = np.random.randint(0, 2, (10, 4))
-        
-        model = RandomForestClassifier(n_estimators=5, random_state=42)
-        model.fit(X_dummy, y_dummy)
-        
-        with open(MODEL_PATH, "wb") as f:
-            pickle.dump(model, f)
-        print("Dummy model created")
-    except Exception as e:
-        print(f"Failed to create dummy model: {e}")
-
-# =============================================================================
-# 1) DATA LOKASI – Dikelompokkan per aktivitas
-# =============================================================================
+# 1. DATA LOKASI
 
 # Kumpulan koordinat untuk setiap kategori aktivitas (dipakai oleh endpoint)
 PANTAI_LOCATIONS = [
@@ -116,15 +71,9 @@ ACTIVITY_LOCATIONS = {
     "rafting": RAFTING_LOCATIONS,
 }
 
-# =============================================================================
-# 2) UTILITAS WAKTU & SUNSHINE
-# =============================================================================
+# 2. UTILITAS WAKTU & SUNSHINE
 
 def id_date(dt: datetime) -> str:
-    """
-    Format tanggal Indonesia yang ramah-UI.
-    Dipakai untuk menampilkan tanggal hari ini di header halaman.
-    """
     bulan = [
         "Januari", "Februari", "Maret", "April", "Mei", "Juni",
         "Juli", "Agustus", "September", "Oktober", "November", "Desember",
@@ -134,21 +83,11 @@ def id_date(dt: datetime) -> str:
 
 
 def overlap_daylight(start: datetime, end: datetime, sunrise: datetime, sunset: datetime) -> float:
-    """
-    Hitung lamanya jam siang (dalam jam) yang tumpang tindih (overlap) antara
-    1 slot 3-jam (start→end) dengan rentang siang (sunrise→sunset).
-    Dipakai oleh perhitungan sunshine harian.
-    """
     a = max(start, sunrise)
     b = min(end, sunset)
     return max(0.0, (b - a).total_seconds() / 3600.0)
 
 def compute_sunshine_for_day(arr_3h, sr_day: datetime, ss_day: datetime, mode: str = "effective") -> float:
-    """
-    Hitung 'sunshine_h' (jam penyinaran efektif) untuk 1 hari.
-    - effective: untuk tiap slot 3-jam, jam siang * (1 - cloud/100), kemudian dijumlah.
-    - daylength: panjang siang murni, mengabaikan awan (opsi referensi).
-    """
     if mode == "daylength":
         return max(0.0, (ss_day - sr_day).total_seconds() / 3600.0)
 
@@ -159,16 +98,10 @@ def compute_sunshine_for_day(arr_3h, sr_day: datetime, ss_day: datetime, mode: s
         sun_hours += daylight * max(0.0, 1.0 - clouds / 100.0)
     return sun_hours
 
-# =============================================================================
-# 3) FETCH FORECAST (OpenWeather 5-day/3-hour) + RINGKAS HARIAN
-# =============================================================================
+# 3. FETCH FORECAST (OpenWeather 5-day/3-hour) + ringkasan harian
+
 
 def fetch_forecast(lat: float, lon: float) -> dict:
-    """
-    Ambil 5-day/3-hour forecast untuk koordinat tertentu, *bucket* per hari lokal
-    (mengacu city.timezone), lalu ringkas menjadi statistik harian (min/max/avg suhu,
-    rata-rata RH/angin, total hujan, dan sunshine_h). Output ini dipakai UI & ML.
-    """
     # Validasi API key
     if not API_KEY:
         return {"ok": False, "error": "OPENWEATHER_API_KEY belum di-set"}
@@ -190,13 +123,13 @@ def fetch_forecast(lat: float, lon: float) -> dict:
     tz_offset = city.get("timezone", 0)
     tz_local = timezone(timedelta(seconds=tz_offset))
 
-    # Sunrise/sunset UTC untuk lokasi kota (dipakai jamnya saja)
+    # Sunrise/sunset UTC untuk lokasi kota
     sunrise_utc = city.get("sunrise")
     sunset_utc = city.get("sunset")
     if not sunrise_utc or not sunset_utc:
         return {"ok": False, "place": place, "error": "Data sunrise/sunset tidak ditemukan dari API"}
 
-    # Konversi ke jam lokal (tanggalnya nanti disesuaikan per hari)
+    # Konversi ke jam lokal
     sunrise_local = datetime.fromtimestamp(sunrise_utc, tz=tz_local).replace(tzinfo=None)
     sunset_local = datetime.fromtimestamp(sunset_utc, tz=tz_local).replace(tzinfo=None)
 
@@ -208,7 +141,7 @@ def fetch_forecast(lat: float, lon: float) -> dict:
         it["_end"] = dt_local + timedelta(hours=3)
         buckets[dt_local.date().isoformat()].append(it)
 
-    # Ringkas statistik per-hari
+    # Ringkasan statistik per-hari
     days = []
     for day, arr in sorted(buckets.items()):
         temps = [a["main"]["temp"] for a in arr if "main" in a]
@@ -243,21 +176,14 @@ def fetch_forecast(lat: float, lon: float) -> dict:
         "days": days,
     }
 
-# =============================================================================
-# 4) ML: LOADING MODEL, PREPROCESS, & PREDIKSI PER HARI
-# =============================================================================
+# 4. ML: LOADING MODEL, PREPROCESS, & PREDIKSI PER HARI
 
 def _load_model():
-    """
-    Lazy-load model ML dari disk hanya sekali; sekaligus ambil urutan fitur
-    saat training (feature_names_in_) yang dipakai untuk menyusun DataFrame input.
-    """
     global _model, _model_feature_names
     if _model is not None:
         return _model
 
-    # 🔥 DIUBAH: Pastikan model file ada sebelum load
-    if not ensure_model_exists():
+    if not os.path.exists(MODEL_PATH):
         raise FileNotFoundError(f"Model file tidak ditemukan: {MODEL_PATH}")
 
     with open(MODEL_PATH, "rb") as f:
@@ -271,7 +197,7 @@ def _load_model():
 
     # Fallback ke ENV bila metadata fitur tidak tersedia
     if not _model_feature_names:
-        env_feats = os.getenv("ML_FEATURE_NAMES", "rr,ss,tn,tx,tavg,rh_avg,ff_avg,ff_avg_kmh,temp_range")  # 🔥 DIUBAH: default value
+        env_feats = os.getenv("ML_FEATURE_NAMES", "")
         if not env_feats:
             raise RuntimeError(
                 "Gagal mendeteksi nama fitur dari model. "
@@ -282,12 +208,6 @@ def _load_model():
     return _model
 
 def _preprocess_payload_to_df(payload: dict):
-    """
-    Normalisasi payload -> DataFrame 1 baris sesuai urutan fitur training:
-    - *Lowercase* semua key, paksa semua nilai numerik
-    - Turunkan ff_avg (m/s) dari ff_avg_kmh (km/h) bila diperlukan model
-    - Isi temp_range jika 0 tetapi ada tn & tx
-    """
     payload = {str(k).lower(): v for k, v in payload.items()}
 
     base_keys = ["rr", "ss", "tn", "tx", "tavg", "rh_avg", "ff_x", "ff_avg_kmh", "temp_range"]
@@ -319,11 +239,6 @@ def _preprocess_payload_to_df(payload: dict):
     return X, df_raw
 
 def _predict_with_proba(X: pd.DataFrame):
-    """
-    Jalankan inferensi model:
-    - y_pred: biner 0/1 per label (pantai/hiking/snorkeling/rafting)
-    - probas: peluang kelas 1 per label (fallback ke y_pred bila tidak tersedia)
-    """
     mdl = _load_model()
     y_pred = mdl.predict(X)[0].tolist()
 
@@ -341,10 +256,6 @@ def _predict_with_proba(X: pd.DataFrame):
     return y_pred, probas
 
 def predict_for_day_data(day_data: dict) -> dict:
-    """
-    Bangun payload fitur dari ringkasan cuaca harian yang sudah dihitung,
-    kemudian panggil _preprocess → _predict untuk mendapatkan label & probabilitas.
-    """
     try:
         _load_model()
         payload = {
@@ -370,20 +281,9 @@ def predict_for_day_data(day_data: dict) -> dict:
             })
         return {"ok": True, "predictions": predictions}
     except Exception as e:
-        # 🔥 DIUBAH: Return predictions dummy jika model error
-        print(f"Prediction error: {e}")
-        predictions = []
-        for name in LABEL_NAMES:
-            predictions.append({
-                "label": name.strip(),
-                "pred": 1,
-                "proba_1": 0.8,
-            })
-        return {"ok": False, "error": str(e), "predictions": predictions}
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
-# =============================================================================
-# 5) PARAREL FETCH PER LOKASI + SUNTIKAN HASIL ML KE HARIAN
-# =============================================================================
+# 5. PARAREL FETCH PER LOKASI + SUNTIKAN HASIL ML KE HARIAN
 
 def fetch_beach_forecast_parallel(loc: dict) -> dict:
     """
@@ -395,7 +295,7 @@ def fetch_beach_forecast_parallel(loc: dict) -> dict:
         if not forecast_data.get("ok"):
             return {"beach": loc["name"], "ok": False, "error": forecast_data.get("error", "Unknown error")}
 
-        # Ambil maksimal 5 hari (H→H+4) agar sinkron dengan UI
+        # Ambil maksimal 5 hari (Hari H → H+4) agar sinkron dengan UI
         all_days = forecast_data["days"]
         days = all_days[:5] if len(all_days) >= 5 else all_days
 
@@ -422,17 +322,10 @@ def fetch_beach_forecast_parallel(loc: dict) -> dict:
     except Exception as e:
         return {"beach": loc["name"], "ok": False, "error": str(e)}
 
-# =============================================================================
-# 6) API ENDPOINTS
-# =============================================================================
+# 6. API ENDPOINTS
 
 @app.route("/api/beaches-forecast")
 def api_beaches_forecast():
-    """
-    Ambil forecast & hasil ML untuk semua lokasi pada aktivitas terpilih.
-    Query: ?activity=pantai|hiking|snorkeling|rafting
-    Hasilnya sudah disertai 'summary' (jumlah hari layak & rata-rata probabilitas).
-    """
     try:
         activity = request.args.get("activity", "pantai").lower()
         if activity not in ACTIVITY_LOCATIONS:
@@ -478,16 +371,10 @@ def api_beaches_forecast():
     except Exception as e:
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
 
-# =============================================================================
-# 7) ROUTE UI (Single Page)
-# =============================================================================
+# 7. ROUTE UI (Single Page)
 
 @app.route("/")
 def home():
-    """
-    Render halaman utama (beaches.html).
-    Template ini akan men-*fetch* data via /api/beaches-forecast sesuai aktivitas yang dipilih.
-    """
     return render_template(
         "beaches.html",
         today=id_date(datetime.now()),
@@ -495,16 +382,10 @@ def home():
         activity_locations=ACTIVITY_LOCATIONS,
     )
 
-# =============================================================================
-# 8) API PREDICT (manual testing/debugging)
-# =============================================================================
+# 8. API PREDICT (manual testing/debugging)
 
 @app.route("/api/predict", methods=["POST", "GET"])
 def api_predict():
-    """
-    Endpoint utilitas untuk *debugging manual* model ML pada 1 baris fitur.
-    Bisa kirim via JSON (POST) atau query string (GET).
-    """
     try:
         _load_model()
 
@@ -553,22 +434,7 @@ def api_predict():
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}, 500
 
-# =============================================================================
-# 9) MAIN - 🔥 DIUBAH: Vercel handler
-# =============================================================================
-
-# 🔥 DIUBAH: Vercel butuh handler khusus
-def vercel_handler(request):
-    with app.app_context():
-        if request.method == 'GET':
-            response = app.full_dispatch_request()
-        else:
-            response = app.process_request(request)
-        return {
-            'statusCode': response.status_code,
-            'headers': dict(response.headers),
-            'body': response.get_data().decode('utf-8')
-        }
+# 9. MAIN
 
 if __name__ == "__main__":
     # use_reloader=False agar tidak dobel run di Windows

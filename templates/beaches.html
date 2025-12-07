@@ -128,32 +128,29 @@ Value yang dipakai JS: pantai | hiking | snorkeling | rafting, Catatan: label me
 
   <!--STATS BAR angka ringkasan: lokasi, hari forecast, prediksi ML-->
   <div class="stats-bar glass-card p-4 mb-4">
-    <div class="row g-3 text-center">
-      <div class="col-6 col-md-4">
-        <div class="stat-item">
-          <div class="stat-icon">📍</div>
-          <div class="stat-value" id="stat-locations">4</div>
-          <div class="stat-label">Lokasi</div>
-        </div>
-      </div>
+  <div class="row g-3 text-center justify-content-center">
 
-      <div class="col-6 col-md-4">
-        <div class="stat-item">
-          <div class="stat-icon">📅</div>
-          <div class="stat-value" id="stat-days">5</div>
-          <div class="stat-label">Hari Prakiraan</div>
-        </div>
-      </div>
-
-      <div class="col-6 col-md-4">
-        <div class="stat-item">
-          <div class="stat-icon">🤖</div>
-          <div class="stat-value" id="stat-predictions">0</div>
-          <div class="stat-label">Prediksi ML</div>
-        </div>
+    <!-- Lokasi -->
+    <div class="col-6 col-md-4 col-lg-3">
+      <div class="stat-item">
+        <div class="stat-icon">📍</div>
+        <div class="stat-value" id="stat-locations">4</div>
+        <div class="stat-label">Lokasi</div>
       </div>
     </div>
+
+    <!-- Hari Prakiraan -->
+    <div class="col-6 col-md-4 col-lg-3">
+      <div class="stat-item">
+        <div class="stat-icon">📅</div>
+        <div class="stat-value" id="stat-days">5</div>
+        <div class="stat-label">Hari Prakiraan</div>
+      </div>
+    </div>
+
   </div>
+</div>
+
 
   <!--COMPARISON TABLE perbandingan detail per hari, Tabel 5 kolom hari HARI INI sampai H+4
   Header hari memiliki ID spesifik agar mudah diisi JS:, #day-header-0..4, Body tabel diisi JS melalui #table-body-->

@@ -15,6 +15,82 @@ let currentActivity = 'pantai';
 /* Cache response per aktivitas agar switching cepat dan hemat request*/
 const cachedData = Object.create(null);
 
+/* Mapping media per lokasi: thumbnail + link detail (YouTube / web) */
+const LOCATION_MEDIA = {
+  // Pantai
+  "Pantai Kuta": {
+    image: "/static/img/pantai/kuta.jpg",
+    link: "https://www.youtube.com/watch?v=6IFpJu7FuSY"
+  },
+  "Pantai Nusa Dua": {
+    image: "/static/img/pantai/nusa.jpg",
+    link: "https://www.youtube.com/watch?v=Bj3fbJWGvlo"
+  },
+  "Pantai Sanur": {
+    image: "/static/img/pantai/sanur.jpg",
+    link: "https://www.youtube.com/watch?v=9YVlsp0B5O4"
+  },
+  "Pantai Seminyak": {
+    image: "/static/img/pantai/seminyak.jpg",
+    link: "https://www.youtube.com/watch?v=QVzUT9uL8KI"
+  },
+
+  // Hiking
+  "Campuhan Ridge Walk": {
+    image: "/static/img/gunung/campuhan.jpeg",
+    link: "https://www.youtube.com/watch?v=HFhiu3stwS0"
+  },
+  "Gunung Agung": {
+    image: "/static/img/gunung/agung.jpg",
+    link: "https://www.youtube.com/watch?v=ECk6mz8pldc"
+  },
+  "Gunung Batukaru": {
+    image: "/static/img/gunung/batukaru.webp",
+    link: "https://www.youtube.com/watch?v=XbUxnsryHJQ"
+  },
+  "Gunung Batur": {
+    image: "/static/img/gunung/batur.jpg",
+    link: "https://www.youtube.com/watch?v=_AkZ7aH9j5Q"
+  },
+
+  // Snorkeling 
+  "Blue Lagoon (Padangbai)": {
+    image: "/static/img/snor/Blue.jpg",
+    link: "https://www.youtube.com/watch?v=WRa8bcmAzW8"
+  },
+  "Pantai Amed": {
+    image: "/static/img/snor/amed.jpg",
+    link: "https://www.youtube.com/watch?v=UzJUwYECGVM&list=RDUzJUwYECGVM&start_radio=1"
+  },
+  "Pulau Menjangan": {
+    image: "/static/img/snor/mejangan.webp",
+    link: "https://www.youtube.com/watch?v=K82Y2cs_SGo&list=RDK82Y2cs_SGo&start_radio=1"
+  },
+  "Tulamben (USAT Liberty)": {
+    image: "/static/img/snor/tula.png",
+    link: "https://www.youtube.com/watch?v=V-g_u1jGzwI"
+  },
+
+  // Rafting 
+  "Sungai Ayung": {
+    image: "/static/img/rafting/ayung.jpg",
+    link: "https://www.youtube.com/watch?v=6XiSFCp730A"
+  },
+  "Sungai Melangit": {
+    image: "/static/img/rafting/melangit.webp",
+    link: "https://www.youtube.com/watch?v=rGyfAh0Cm6A"
+  },
+  "Sungai Telaga Waja": {
+    image: "/static/img/rafting/telaga.jpg",
+    link: "https://www.youtube.com/watch?v=3VCUVQbYF1A"
+  },
+  "Sungai Unda": {
+    image: "/static/img/rafting/unda.jpg",
+    link: "https://www.youtube.com/watch?v=nf8DYqLSDB8"
+  }
+};
+
+
 /* [DOM HELPERS] Utilitas untuk akses elemen*/
 const $  = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => root.querySelectorAll(sel);
@@ -99,7 +175,6 @@ function populateSummaryCards(locations) {
     const ringPct   = (SUMMARY_MODE === 'days') ? daysPct : avgProbaPct; // (dipakai untuk animasi teks)
     const centerTxt = (SUMMARY_MODE === 'days') ? `${layakDays}/${totalDays}` : `${avgProbaPct}%`;
     const centerLbl = (SUMMARY_MODE === 'days') ? 'Hari Layak' : 'Rata-rata ML';
-    const badgeTxt  = (SUMMARY_MODE === 'days') ? `${daysPct}% Cocok` : `${layakDays}/${totalDays} Hari Layak`;
 
     c.insertAdjacentHTML('beforeend', `
       <div class="col-md-6 col-lg-3">
@@ -123,8 +198,6 @@ function populateSummaryCards(locations) {
               <div class="score-label">${centerLbl}</div>
             </div>
           </div>
-
-          <div class="percentage-badge">${badgeTxt}</div>
         </div>
       </div>`);
   });
@@ -153,7 +226,6 @@ function populateSummaryCards(locations) {
   const locOk = locations.find(l => l?.summary?.days_total || (l?.days?.length > 0));
   byId('stat-locations').textContent   = String(locations.length);
   byId('stat-days').textContent        = String(locOk?.summary?.days_total ?? 5);
-  byId('stat-predictions').textContent = String(locations.length * (locOk?.summary?.days_total ?? 5) * 4); // 4 label ML
 }
 
 /* [RENDER HEADER TANGGAL] Konsistensi kolom "HARI INI"*/
@@ -207,7 +279,6 @@ function createWeatherCell(day, isToday = false) {
       <div class="cell-content">
         <div class="prediction-badge ${badgeClass}">
           <span class="badge-icon">${isLayak ? '✓' : '✗'}</span>
-          <span class="badge-text">${probaPercent}%</span>
         </div>
         <div class="weather-info">
           <div class="weather-item"><i class="bi bi-thermometer-half"></i><span>${day.temp_avg}°C</span></div>
@@ -240,15 +311,41 @@ function populateComparisonTable(locations) {
     if (dates[i]) th.innerHTML = headerLabel(dates[i], i === todayIdx);
   }
 
-  // Baris per lokasi
+    // Baris per lokasi
   locations.forEach((location) => {
+    // Ambil mapping media untuk lokasi ini (kalau ada)
+    const media   = LOCATION_MEDIA[location.beach] || {};
+    const imgUrl  = media.image || media.img || '';
+    const linkUrl = media.link  || media.url || '';
+
+
+    // HTML gambar (tanpa <a>, karena nanti 1 blok kita bungkus <a>)
+    const imgHtml = imgUrl
+      ? `
+        <div class="location-thumb">
+          <img src="${imgUrl}" alt="${location.beach}" loading="lazy">
+        </div>
+      `
+      : '';
+
+    // Kalau ada link, bungkus seluruh blok lokasi dengan <a>
+    const clickableStart = linkUrl
+      ? `<a href="${linkUrl}" target="_blank" rel="noopener noreferrer" class="location-link">`
+      : '';
+    const clickableEnd = linkUrl ? `</a>` : '';
+
     let row = `
       <tr class="location-row">
         <td class="location-cell">
-          <div class="location-info">
-            <div class="location-name-badge fw-bold">${location.beach}</div>
-            ${location.ok ? `<div class="location-meta">☀️ ${location.sunrise} - ${location.sunset}</div>` : ''}
+          ${clickableStart}
+          <div class="location-media-vertical">
+            ${imgHtml}
+            <div class="location-info-text">
+              <div class="location-name-badge fw-bold">${location.beach}</div>
+              ${location.ok ? `<div class="location-meta">☀️ ${location.sunrise} - ${location.sunset}</div>` : ''}
+            </div>
           </div>
+          ${clickableEnd}
         </td>
     `;
 
@@ -273,6 +370,7 @@ function populateComparisonTable(locations) {
  * @param {Object} dayData
  */
 function showDayDetails(dateIso, dayData) {
+  console.log("DEBUG_DAYDATA:", dayData);
   const modal = new bootstrap.Modal(byId('detailModal'));
   byId('modal-title').textContent = `Detail: ${formatDate(dateIso)}`;
 

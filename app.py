@@ -1,43 +1,49 @@
+import logging
 from flask import Flask, render_template, request, jsonify
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 import concurrent.futures
 import os
 import pickle
+import joblib
 import requests
 import pandas as pd
+import numpy as np
 from dotenv import load_dotenv
 
-# APLIKASI & KONFIGURASI GLOBAL
+# ============================================================
+# 0. APP & GLOBAL CONFIG
+# ============================================================
 
-# Memuat variabel lingkungan dari .env (API key, dll)
 load_dotenv()
-
-# Inisialisasi aplikasi Flask
 app = Flask(__name__)
 
-# OpenWeather config
+# --- Logging ---
+LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.DEBUG),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+logger.info("Flask app starting, log level = %s", LOG_LEVEL)
+
 API_KEY = os.getenv("OPENWEATHER_API_KEY", "aef2fdd2aa915a9a7a7a7e3835c66468")
-UNITS = "metric"      # gunakan °C, m/s dari OpenWeather
-LANG = "id"           # respons deskriptif bahasa Indonesia
+UNITS = "metric"
+LANG = "id"
 DEFAULT_PLACE = os.getenv("DEFAULT_PLACE", "Bali")
 
-# Mode perhitungan sunshine
-# "effective": jam siang * (1 - cloud) per slot 3 jam
-# "daylength": panjang siang murni
-SUN_MODE = "effective"
+SUN_MODE = "effective"  # "effective" atau "daylength"
 
-# Konfigurasi Model ML
-MODEL_PATH = "multi_rf_model.pkl"
+MODEL_PATH = "model_random_forest.pkl"
 LABEL_NAMES = os.getenv("ML_LABEL_NAMES", "pantai,hiking,snorkeling,rafting").split(",")
 
-# Model & fitur
 _model = None
 _model_feature_names = None
 
-# 1. DATA LOKASI
+# ============================================================
+# 1. LOKASI
+# ============================================================
 
-# Kumpulan koordinat untuk setiap kategori aktivitas (dipakai oleh endpoint)
 PANTAI_LOCATIONS = [
     {"name": "Pantai Kuta", "lat": -8.7184, "lon": 115.1686},
     {"name": "Pantai Sanur", "lat": -8.7069, "lon": 115.2625},
@@ -63,7 +69,6 @@ RAFTING_LOCATIONS = [
     {"name": "Sungai Unda", "lat": -8.5411, "lon": 115.4833},
 ]
 
-# Pemetaan aktivitas -> daftar lokasi (dipilih dari radio button di UI)
 ACTIVITY_LOCATIONS = {
     "pantai": PANTAI_LOCATIONS,
     "hiking": HIKING_LOCATIONS,
@@ -71,7 +76,9 @@ ACTIVITY_LOCATIONS = {
     "rafting": RAFTING_LOCATIONS,
 }
 
-# 2. UTILITAS WAKTU & SUNSHINE
+# ============================================================
+# 2. UTIL WAKTU & SUNSHINE
+# ============================================================
 
 def id_date(dt: datetime) -> str:
     bulan = [
@@ -87,53 +94,229 @@ def overlap_daylight(start: datetime, end: datetime, sunrise: datetime, sunset: 
     b = min(end, sunset)
     return max(0.0, (b - a).total_seconds() / 3600.0)
 
+
 def compute_sunshine_for_day(arr_3h, sr_day: datetime, ss_day: datetime, mode: str = "effective") -> float:
     if mode == "daylength":
         return max(0.0, (ss_day - sr_day).total_seconds() / 3600.0)
 
     sun_hours = 0.0
     for a in arr_3h:
-        clouds = (a.get("clouds", {}) or {}).get("all", 50)  # default awan 50% bila kosong
+        clouds = (a.get("clouds", {}) or {}).get("all", 50)
         daylight = overlap_daylight(a["_start"], a["_end"], sr_day, ss_day)
         sun_hours += daylight * max(0.0, 1.0 - clouds / 100.0)
     return sun_hours
 
-# 3. FETCH FORECAST (OpenWeather 5-day/3-hour) + ringkasan harian
+# ============================================================
+# 3. FUNGSI IKLIM (SAMA DENGAN NOTEBOOK)
+# ============================================================
 
+# ---------- PANTAI / HCI_beach ----------
+
+N_DAY = 12.0  # 12 jam maksimal penyinaran
+
+TC_TABLE = [
+    (39.0, float("inf"), 0),
+    (38.0, 38.9, 2),
+    (37.0, 37.9, 4),
+    (36.0, 36.9, 5),
+    (35.0, 35.9, 6),
+    (34.0, 34.9, 7),
+    (33.0, 33.9, 8),
+    (31.0, 32.9, 9),
+    (28.0, 30.9, 10),
+    (26.0, 27.9, 9),
+    (23.0, 25.9, 7),
+    (22.0, 22.9, 6),
+    (21.0, 21.9, 5),
+    (20.0, 20.9, 4),
+    (19.0, 19.9, 3),
+    (18.0, 18.9, 2),
+    (17.0, 17.9, 1),
+    (15.0, 16.9, 0),
+    (10.0, 14.9, -5),
+    (-float("inf"), 9.9, -10),
+]
+
+A_TABLE = [
+    (0.0,   0.9,   8),
+    (1.0,   14.9,  9),
+    (15.0,  25.9, 10),
+    (26.0,  35.9,  9),
+    (36.0,  45.9,  8),
+    (46.0,  55.9,  7),
+    (56.0,  65.9,  6),
+    (66.0,  75.9,  5),
+    (76.0,  85.9,  4),
+    (86.0,  95.9,  3),
+    (96.0,  float("inf"), 2),
+]
+
+P_TABLE = [
+    (0.00,  0.00, 10),
+    (0.01,  2.99,  9),
+    (3.00,  5.99,  8),
+    (6.00,  8.99,  6),
+    (9.00, 11.99,  4),
+    (12.00, 24.99,  0),
+    (25.00, float("inf"), -1),
+]
+
+W_TABLE = [
+    (0.0,   0.5,   8),
+    (0.6,   9.9,  10),
+    (10.0, 19.9,   9),
+    (20.0, 29.9,   8),
+    (30.0, 39.9,   6),
+    (40.0, 49.9,   3),
+    (50.0, 69.9,   0),
+    (70.0, float("inf"), -10),
+]
+
+def lookup_score(value, table):
+    for lower, upper, rating in table:
+        if lower <= value <= upper:
+            return rating
+    return 0
+
+def ss_to_cc_equiv(ss_hours):
+    """SS (jam) -> CC_equiv (%), pakai clip 0..100 seperti notebook."""
+    cc = 100.0 * (1.0 - (float(ss_hours) / N_DAY))
+    return float(np.clip(cc, 0.0, 100.0))
+
+# ---------- SNORKELING / CTCI_Bali ----------
+
+W_THI, W_S, W_P, W_W = 0.367, 0.519, 0.085, 0.028
+
+def rate_from_table(x, table):
+    for low, high, r in table:
+        if (low is None or x >= low) and (high is None or x <= high):
+            return r
+    return 0
+
+def clamp(x, lo, hi):
+    return max(lo, min(hi, x))
+
+def calc_thi(tavg, rh_avg):
+    return 0.8 * tavg + (rh_avg * tavg) / 500.0
+
+THI_TABLE = [
+    (28.0,  None, 0), (None, 14.9, 0),
+    (27.5,  27.9, 3), (17.0, 17.9, 3),
+    (27.0,  27.4, 5), (19.0, 19.9, 5),
+    (26.5,  26.9, 6), (20.0, 20.9, 6),
+    (26.0,  26.4, 7), (21.0, 21.9, 7),
+    (25.5,  25.9, 8), (22.0, 22.9, 8),
+    (25.0,  25.4, 9), (23.0, 23.9, 9),
+    (24.0,  24.9, 10),
+    (18.0,  18.9, 4),
+    (16.0,  16.9, 2),
+    (15.0,  15.9, 1),
+]
+
+def ss_to_cc_snork(ss_hours):
+    return clamp(100.0 * (1.0 - (ss_hours / 12.0)), 0.0, 100.0)
+
+S_TABLE_CC = [
+    (None, 16.7, 10),
+    (16.8, 24.9, 9),
+    (25.1, 33.3, 8),
+    (33.4, 41.7, 7),
+    (41.8, 50.0, 6),
+    (50.1, 58.3, 5),
+    (58.4, 66.7, 4),
+    (66.8, 75.0, 3),
+    (75.1, 83.3, 2),
+    (83.5, 91.7, 1),
+    (91.8, None, 0),
+]
+
+P_TABLE_SNORK = [
+    (0.0,   0.0, 10),
+    (0.1,   1.9, 9),
+    (2.0,   2.9, 8),
+    (3.0,   3.9, 7),
+    (4.0,   4.9, 6),
+    (5.0,   5.9, 5),
+    (6.0,   6.9, 4),
+    (7.0,   7.9, 3),
+    (8.0,   8.9, 2),
+    (9.0,   9.9, 1),
+    (10.0,  None, 0),
+]
+
+W_TABLE_SNORK = [
+    (6.0,  11.9, 10),
+    (1.0,   5.9,  9), (12.0, 15.9, 9),
+    (None,  0.99, 8), (16.0, 19.9, 8),
+    (20.0, 24.9, 7),
+    (25.0, 28.9, 6),
+    (29.0, 33.9, 5),
+    (34.0, 38.9, 4),
+    (39.0, 43.9, 3),
+    (44.0, 49.9, 2),
+    (50.0, 55.9, 1),
+    (56.0, None, 0),
+]
+
+def compute_ctci_bali_scalar(tavg, rh_avg, rr, ss, ff_avg_kmh):
+    thi = calc_thi(tavg, rh_avg)
+    thi_rating = rate_from_table(thi, THI_TABLE)
+
+    cc = ss_to_cc_snork(ss)
+    s_rating = rate_from_table(cc, S_TABLE_CC)
+
+    p_rating = rate_from_table(rr, P_TABLE_SNORK)
+    w_rating = rate_from_table(ff_avg_kmh, W_TABLE_SNORK)
+
+    ctci = (
+        W_THI * thi_rating +
+        W_S   * s_rating   +
+        W_P   * p_rating   +
+        W_W   * w_rating
+    )
+    return float(ctci)
+
+# ============================================================
+# 4. FETCH FORECAST
+# ============================================================
 
 def fetch_forecast(lat: float, lon: float) -> dict:
-    # Validasi API key
+    logger.debug("Fetching forecast for lat=%s lon=%s", lat, lon)
     if not API_KEY:
+        logger.error("OPENWEATHER_API_KEY not set")
         return {"ok": False, "error": "OPENWEATHER_API_KEY belum di-set"}
 
-    # Panggil endpoint forecast
-    r = requests.get(
-        "https://api.openweathermap.org/data/2.5/forecast",
-        params={"lat": lat, "lon": lon, "appid": API_KEY, "units": UNITS, "lang": LANG},
-        timeout=10,
-    )
+    try:
+        r = requests.get(
+            "https://api.openweathermap.org/data/2.5/forecast",
+            params={"lat": lat, "lon": lon, "appid": API_KEY, "units": UNITS, "lang": LANG},
+            timeout=15,
+        )
+    except Exception as e:
+        logger.exception("Request to OpenWeather failed")
+        return {"ok": False, "error": f"Request error: {e}"}
+
     if r.status_code != 200:
+        logger.error("OpenWeather HTTP %s: %s", r.status_code, r.text[:200])
         return {"ok": False, "error": f"HTTP {r.status_code}: {r.text[:200]}"}
 
     data = r.json()
     city = data.get("city", {})
     place = city.get("name", DEFAULT_PLACE)
+    logger.debug("Forecast city=%s", place)
 
-    # Siapkan zona waktu lokal berdasarkan offset OpenWeather
     tz_offset = city.get("timezone", 0)
     tz_local = timezone(timedelta(seconds=tz_offset))
 
-    # Sunrise/sunset UTC untuk lokasi kota
     sunrise_utc = city.get("sunrise")
     sunset_utc = city.get("sunset")
     if not sunrise_utc or not sunset_utc:
+        logger.error("No sunrise/sunset in API response")
         return {"ok": False, "place": place, "error": "Data sunrise/sunset tidak ditemukan dari API"}
 
-    # Konversi ke jam lokal
     sunrise_local = datetime.fromtimestamp(sunrise_utc, tz=tz_local).replace(tzinfo=None)
     sunset_local = datetime.fromtimestamp(sunset_utc, tz=tz_local).replace(tzinfo=None)
 
-    # Bucket semua slot 3-jam ke dalam 'hari lokal'
     buckets = defaultdict(list)
     for it in data.get("list", []):
         dt_local = datetime.fromtimestamp(it["dt"], tz=tz_local).replace(tzinfo=None)
@@ -141,7 +324,6 @@ def fetch_forecast(lat: float, lon: float) -> dict:
         it["_end"] = dt_local + timedelta(hours=3)
         buckets[dt_local.date().isoformat()].append(it)
 
-    # Ringkasan statistik per-hari
     days = []
     for day, arr in sorted(buckets.items()):
         temps = [a["main"]["temp"] for a in arr if "main" in a]
@@ -149,12 +331,10 @@ def fetch_forecast(lat: float, lon: float) -> dict:
         winds = [a.get("wind", {}).get("speed", 0) for a in arr]
         rains_3h = [(a.get("rain", {}) or {}).get("3h", 0.0) for a in arr]
 
-        # Bentuk rentang siang untuk tanggal 'day'
         dt_day = datetime.fromisoformat(day)
         sr_day = dt_day.replace(hour=sunrise_local.hour, minute=sunrise_local.minute, second=0, microsecond=0)
         ss_day = dt_day.replace(hour=sunset_local.hour, minute=sunset_local.minute, second=0, microsecond=0)
 
-        # Sunshine harian (mengikuti SUN_MODE)
         sunshine_h = round(compute_sunshine_for_day(arr, sr_day, ss_day, mode=SUN_MODE), 1)
 
         days.append({
@@ -163,11 +343,12 @@ def fetch_forecast(lat: float, lon: float) -> dict:
             "temp_max": round(max(temps)) if temps else None,
             "temp_avg": round(sum(temps) / len(temps)) if temps else None,
             "humidity_avg": round(sum(hums) / len(hums)) if hums else None,
-            "wind_kmh_avg": round((sum(winds) / len(winds)) * 3.6, 1) if winds else None,  # m/s -> km/h
-            "rain_mm": round(sum(rains_3h), 1),   # total hujan harian
-            "sunshine_h": sunshine_h,             # jam penyinaran efektif
+            "wind_kmh_avg": round((sum(winds) / len(winds)) * 3.6, 1) if winds else None,
+            "rain_mm": round(sum(rains_3h), 1),
+            "sunshine_h": sunshine_h,
         })
 
+    logger.debug("Forecast days=%d", len(days))
     return {
         "ok": True,
         "place": place,
@@ -176,101 +357,120 @@ def fetch_forecast(lat: float, lon: float) -> dict:
         "days": days,
     }
 
-# 4. ML: LOADING MODEL, PREPROCESS, & PREDIKSI PER HARI
+# ============================================================
+# 5. MODEL & FEATURE BUILDER
+# ============================================================
 
 def _load_model():
     global _model, _model_feature_names
     if _model is not None:
         return _model
 
+    logger.info("Loading model from %s", MODEL_PATH)
     if not os.path.exists(MODEL_PATH):
+        logger.error("Model file not found: %s", MODEL_PATH)
         raise FileNotFoundError(f"Model file tidak ditemukan: {MODEL_PATH}")
 
-    with open(MODEL_PATH, "rb") as f:
-        _model = pickle.load(f)
+    # PENTING: model disimpan dengan joblib.dump, jadi harus pakai joblib.load
+    _model = joblib.load(MODEL_PATH)
 
-    # Coba ambil feature_names_in_ dari salah satu estimator (MultiOutput)
     try:
         _model_feature_names = list(_model.estimators_[0].feature_names_in_)
     except Exception:
         _model_feature_names = list(getattr(_model, "feature_names_in_", []))
 
-    # Fallback ke ENV bila metadata fitur tidak tersedia
     if not _model_feature_names:
-        env_feats = os.getenv("ML_FEATURE_NAMES", "")
-        if not env_feats:
-            raise RuntimeError(
-                "Gagal mendeteksi nama fitur dari model. "
-                "Set ENV ML_FEATURE_NAMES atau latih ulang sklearn>=1.0."
-            )
-        _model_feature_names = [c.strip() for c in env_feats.split(",") if c.strip()]
+        logger.error("feature_names_in_ tidak ditemukan di model")
+        raise RuntimeError("Tidak bisa membaca feature_names_in_ dari model. Pastikan sklearn>=1.0 saat training.")
 
+    logger.info("Model loaded. n_features=%d", len(_model_feature_names))
+    logger.debug("Feature names: %s", _model_feature_names)
     return _model
 
-def _preprocess_payload_to_df(payload: dict):
-    payload = {str(k).lower(): v for k, v in payload.items()}
+def build_features_from_meteo(tavg, rh_avg, rr, ss, ff_kmh):
+    """
+    Replikasi persis pipeline di notebook.
+    """
+    tavg = float(tavg or 0.0)
+    rh_avg = float(rh_avg or 0.0)
+    rr = float(rr or 0.0)
+    ss = float(ss or 0.0)
+    ff_kmh = float(ff_kmh or 0.0)
 
-    base_keys = ["rr", "ss", "tn", "tx", "tavg", "rh_avg", "ff_x", "ff_avg_kmh", "temp_range"]
-    for k in base_keys:
-        payload.setdefault(k, 0)
+    ff_avg = ff_kmh / 3.6  # m/s
 
-    df_raw = pd.DataFrame([payload])
+    cc_equiv = ss_to_cc_equiv(ss)
 
-    # Pastikan semua numeric & tanpa NaN
-    for col in base_keys:
-        df_raw[col] = pd.to_numeric(df_raw[col], errors="coerce").fillna(0.0)
+    TC = lookup_score(tavg, TC_TABLE)
+    A = lookup_score(cc_equiv, A_TABLE)
+    P = lookup_score(rr, P_TABLE)
+    Wv = lookup_score(ff_kmh, W_TABLE)
+    hci_beach = 2 * TC + 4 * A + 3 * P + Wv
+    hci_beach = float(np.round(hci_beach, 0))
 
-    # Turunan: ff_avg (m/s) dari km/h bila diminta oleh model
-    if "ff_avg" in _model_feature_names and "ff_avg" not in df_raw.columns:
-        df_raw["ff_avg"] = df_raw["ff_avg_kmh"] / 3.6
+    cc_from_ss = 100.0 * (1.0 - ss / 12.0)
 
-    # Turunan: temp_range bila 0 namun tn/tx tersedia
-    if "temp_range" in _model_feature_names and "temp_range" in df_raw.columns:
-        need_fill = (df_raw["temp_range"] == 0).all()
-        if need_fill and ("tn" in df_raw.columns) and ("tx" in df_raw.columns):
-            df_raw["temp_range"] = (df_raw["tx"] - df_raw["tn"]).fillna(df_raw["temp_range"])
+    ctci_bali = compute_ctci_bali_scalar(tavg, rh_avg, rr, ss, ff_kmh)
 
-    # Lengkapi kolom agar urut sesuai training
+    features = {
+        "TAVG": tavg,
+        "RH_AVG": rh_avg,
+        "RR": rr,
+        "SS": ss,
+        "FF_AVG": ff_avg,
+        "FF_AVG_kmh": ff_kmh,
+        "CC_equiv": cc_equiv,
+        "HCI_beach_0_100": hci_beach,
+        "CC_from_SS": cc_from_ss,
+        "CTCI_Bali": ctci_bali,
+    }
+    logger.debug("Built features from meteo: %s", features)
+    return features
+
+def _predict_with_features_dict(feat_dict: dict):
+    mdl = _load_model()
+
+    df_raw = pd.DataFrame([feat_dict])
+    for c in df_raw.columns:
+        df_raw[c] = pd.to_numeric(df_raw[c], errors="coerce").fillna(0.0)
+
     for feat in _model_feature_names:
         if feat not in df_raw.columns:
             df_raw[feat] = 0.0
 
     X = df_raw[_model_feature_names].copy()
-    return X, df_raw
+    logger.debug("X_for_model=%s", X.iloc[0].to_dict())
 
-def _predict_with_proba(X: pd.DataFrame):
-    mdl = _load_model()
     y_pred = mdl.predict(X)[0].tolist()
+    logger.debug("Raw y_pred=%s", y_pred)
 
     probas = []
     try:
-        prob_list = mdl.predict_proba(X)  # list: 1 array per label
+        prob_list = mdl.predict_proba(X)
         for i, p in enumerate(prob_list):
             if hasattr(p, "shape") and p.shape[1] == 2:
                 probas.append(float(p[0, 1]))
             else:
-                probas.append(float(y_pred[i]))  # fallback bila non-biner
+                probas.append(float(y_pred[i]))
     except Exception:
+        logger.exception("predict_proba gagal, fallback pakai y_pred sebagai proba")
         probas = [float(v) for v in y_pred]
 
-    return y_pred, probas
+    logger.debug("Probabilities=%s", probas)
+    return y_pred, probas, df_raw, X
 
 def predict_for_day_data(day_data: dict) -> dict:
     try:
-        _load_model()
-        payload = {
-            "rr": day_data.get("rain_mm", 0),
-            "ss": day_data.get("sunshine_h", 0),
-            "tn": day_data.get("temp_min", 0),
-            "tx": day_data.get("temp_max", 0),
-            "tavg": day_data.get("temp_avg", 0),
-            "rh_avg": day_data.get("humidity_avg", 0),
-            "ff_x": 0,
-            "ff_avg_kmh": day_data.get("wind_kmh_avg", 0),
-            "temp_range": (day_data.get("temp_max", 0) - day_data.get("temp_min", 0)),
-        }
-        X, _ = _preprocess_payload_to_df(payload)
-        y_pred, probas = _predict_with_proba(X)
+        logger.debug("Predict for day_data=%s", day_data)
+
+        tavg = day_data.get("temp_avg", 0)
+        rh = day_data.get("humidity_avg", 0)
+        rr = day_data.get("rain_mm", 0)
+        ss = day_data.get("sunshine_h", 0)
+        ff_kmh = day_data.get("wind_kmh_avg", 0)
+
+        feat = build_features_from_meteo(tavg, rh, rr, ss, ff_kmh)
+        y_pred, probas, df_raw, X = _predict_with_features_dict(feat)
 
         predictions = []
         for i, name in enumerate(LABEL_NAMES):
@@ -279,35 +479,44 @@ def predict_for_day_data(day_data: dict) -> dict:
                 "pred": int(y_pred[i]) if i < len(y_pred) else None,
                 "proba_1": round(float(probas[i]), 4) if i < len(probas) else None,
             })
-        return {"ok": True, "predictions": predictions}
+
+        logger.debug("Predictions=%s", predictions)
+        return {
+            "ok": True,
+            "predictions": predictions,
+            "features_used": df_raw.iloc[0].to_dict(),
+        }
     except Exception as e:
+        logger.exception("Error in predict_for_day_data")
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
-# 5. PARAREL FETCH PER LOKASI + SUNTIKAN HASIL ML KE HARIAN
+# ============================================================
+# 6. PARALLEL FETCH + INJEKSI ML
+# ============================================================
 
 def fetch_beach_forecast_parallel(loc: dict) -> dict:
-    """
-    Ambil forecast untuk 1 lokasi (maks 5 hari), lakukan prediksi ML untuk tiap hari,
-    serta tandai 'is_today' (membantu penyorotan kolom HARI INI pada UI).
-    """
+    logger.info("Processing location %s", loc["name"])
     try:
         forecast_data = fetch_forecast(loc["lat"], loc["lon"])
         if not forecast_data.get("ok"):
+            logger.error("Forecast error for %s: %s", loc["name"], forecast_data.get("error"))
             return {"beach": loc["name"], "ok": False, "error": forecast_data.get("error", "Unknown error")}
 
-        # Ambil maksimal 5 hari (Hari H → H+4) agar sinkron dengan UI
         all_days = forecast_data["days"]
         days = all_days[:5] if len(all_days) >= 5 else all_days
 
-        # Tandai hari ini & injeksikan hasil ML
         today_iso = datetime.now().date().isoformat()
         for day in days:
             ml_result = predict_for_day_data(day)
             preds = ml_result.get("predictions", []) or []
             day["ml_predictions"] = preds
             day["ml_ok"] = ml_result.get("ok", False)
-            # Map cepat untuk akses per-aktivitas di frontend
-            day["ml"] = {p["label"].lower(): {"pred": p.get("pred"), "proba": p.get("proba_1")} for p in preds}
+            day["features"] = ml_result.get("features_used", {})
+
+            day["ml"] = {
+                p["label"].lower(): {"pred": p.get("pred"), "proba": p.get("proba_1")}
+                for p in preds
+            }
             day["is_today"] = (day["date_iso"] == today_iso)
 
         return {
@@ -320,15 +529,20 @@ def fetch_beach_forecast_parallel(loc: dict) -> dict:
             "days": days,
         }
     except Exception as e:
+        logger.exception("Error in fetch_beach_forecast_parallel for %s", loc["name"])
         return {"beach": loc["name"], "ok": False, "error": str(e)}
 
-# 6. API ENDPOINTS
+# ============================================================
+# 7. ENDPOINTS
+# ============================================================
 
 @app.route("/api/beaches-forecast")
 def api_beaches_forecast():
+    activity = request.args.get("activity", "pantai").lower()
+    logger.info("GET /api/beaches-forecast activity=%s", activity)
     try:
-        activity = request.args.get("activity", "pantai").lower()
         if activity not in ACTIVITY_LOCATIONS:
+            logger.warning("Invalid activity=%s", activity)
             return jsonify({
                 "ok": False,
                 "error": f"Invalid activity. Must be one of: {', '.join(ACTIVITY_LOCATIONS.keys())}"
@@ -336,15 +550,12 @@ def api_beaches_forecast():
 
         locations = ACTIVITY_LOCATIONS[activity]
 
-        # Paralel fetch per lokasi agar respons cepat
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
             futures = {executor.submit(fetch_beach_forecast_parallel, loc): loc for loc in locations}
             results = [future.result() for future in concurrent.futures.as_completed(futures)]
 
-        # Urutkan hasil supaya stabil di UI
         results.sort(key=lambda x: x.get("beach", ""))
 
-        # Tambahkan ringkasan (count-based) per lokasi dari label ML untuk aktivitas saat ini
         for result in results:
             if result.get("ok") and result.get("days"):
                 ok_days, probs = 0, []
@@ -361,6 +572,7 @@ def api_beaches_forecast():
                     "avg_proba": round(sum(probs) / len(probs), 3) if probs else 0.0,
                 }
 
+        logger.info("Returning %d locations for activity=%s", len(results), activity)
         return jsonify({
             "ok": True,
             "activity": activity,
@@ -369,12 +581,12 @@ def api_beaches_forecast():
         }), 200
 
     except Exception as e:
+        logger.exception("Error in /api/beaches-forecast")
         return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
-
-# 7. ROUTE UI (Single Page)
 
 @app.route("/")
 def home():
+    logger.info("GET / (home)")
     return render_template(
         "beaches.html",
         today=id_date(datetime.now()),
@@ -382,36 +594,36 @@ def home():
         activity_locations=ACTIVITY_LOCATIONS,
     )
 
-# 8. API PREDICT (manual testing/debugging)
+# ---------- API PREDICT MANUAL (UNTUK DEBUG) ----------
 
 @app.route("/api/predict", methods=["POST", "GET"])
 def api_predict():
+    logger.info("Hit /api/predict method=%s", request.method)
     try:
         _load_model()
 
-        # Parsing payload sesuai metode
         if request.method == "POST":
-            payload = request.get_json(silent=True) or {}
+            src = request.get_json(silent=True) or {}
         else:
-            payload = {
-                k: request.args.get(k)
-                for k in ["rr", "ss", "tn", "tx", "tavg", "rh_avg", "ff_x", "ff_avg_kmh", "temp_range"]
-                if request.args.get(k) is not None
-            }
+            src = request.args or {}
+        logger.debug("Raw payload=%s", src)
 
-        # Validasi input kosong
-        if not payload:
+        tavg = src.get("TAVG") or src.get("tavg") or src.get("temp_avg")
+        rh = src.get("RH_AVG") or src.get("rh_avg") or src.get("humidity_avg")
+        rr = src.get("RR") or src.get("rr") or src.get("rain_mm")
+        ss = src.get("SS") or src.get("ss") or src.get("sunshine_h")
+        ff_kmh = src.get("FF_AVG_kmh") or src.get("ff_avg_kmh") or src.get("wind_kmh_avg")
+
+        if tavg is None or rh is None or rr is None or ss is None or ff_kmh is None:
+            logger.warning("Missing minimal fields in /api/predict")
             return {
                 "ok": False,
-                "error": "Tidak ada payload. Kirim JSON atau query params sesuai spesifikasi.",
-                "expected_fields": ["rr", "ss", "tn", "tx", "tavg", "rh_avg", "ff_x", "ff_avg_kmh", "temp_range"],
+                "error": "Field minimal: TAVG, RH_AVG, RR, SS, FF_AVG_kmh (atau nama ekuivalen).",
             }, 400
 
-        # Preprocess dan prediksi
-        X, df_raw = _preprocess_payload_to_df(payload)
-        y_pred, probas = _predict_with_proba(X)
+        feat = build_features_from_meteo(tavg, rh, rr, ss, ff_kmh)
+        y_pred, probas, df_raw, X = _predict_with_features_dict(feat)
 
-        # Susun hasil agar mudah dibaca
         results = []
         for i, name in enumerate(LABEL_NAMES):
             results.append({
@@ -420,22 +632,27 @@ def api_predict():
                 "proba_1": round(float(probas[i]), 4) if i < len(probas) else None,
             })
 
+        logger.info("Prediction success for /api/predict")
         return {
             "ok": True,
             "model_path": MODEL_PATH,
             "features_used": _model_feature_names,
             "input_received": df_raw.iloc[0].to_dict(),
-            "X_for_model": {k: (float(v) if v is not None else None) for k, v in X.iloc[0].to_dict().items()},
+            "X_for_model": {k: float(v) for k, v in X.iloc[0].to_dict().items()},
             "predictions": results,
         }, 200
 
     except FileNotFoundError as e:
+        logger.exception("Model file not found in /api/predict")
         return {"ok": False, "error": str(e)}, 500
     except Exception as e:
+        logger.exception("Unhandled error in /api/predict")
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}, 500
 
-# 9. MAIN
+# ============================================================
+# 8. MAIN
+# ============================================================
 
 if __name__ == "__main__":
-    # use_reloader=False agar tidak dobel run di Windows
+    logger.info("Running Flask development server on 127.0.0.1:5000")
     app.run(host="127.0.0.1", port=5000, debug=True, use_reloader=False)

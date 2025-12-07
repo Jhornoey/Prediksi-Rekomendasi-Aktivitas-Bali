@@ -257,14 +257,18 @@ body {
 
 /* Badge hasil prediksi (excellent/good/poor) */
 .prediction-badge {
-  display:inline-flex;
-  align-items:center;
-  gap:0.5rem;
-  padding:0.5rem 1rem;
-  border-radius:12px;
-  font-weight:700;
-  font-size:1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 1.2rem;   /* mirip detail-btn */
+  min-width: 90px;           /* kira-kira selebar tombol "Detail" */
+  height: 38px;              /* tinggi konsisten */
+  border-radius: 8px;        /* samakan dengan detail-btn (boleh 999px kalau mau pill) */
+  font-size: 0.875rem;
+  font-weight: 600;
+  gap: 0;                    /* sudah tidak ada teks persen */
 }
+
 .badge-excellent { background:var(--success-gradient); color:#fff; }
 .badge-good { background:linear-gradient(135deg,#ffd89b 0%,#19547b 100%); color:#fff; }
 .badge-poor { background:var(--warning-gradient); color:#fff; }
@@ -481,4 +485,115 @@ body {
   font-weight: 700;
   color: #1e293b;
   letter-spacing: 0.3px;
+}
+
+/* === Override layout summary card setelah badge dihapus === */
+.summary-card {
+  /* tetap pakai style lama, tapi tambahkan flex dan padding lebih kecil */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;   /* judul + ring di tengah kartu */
+  gap: 0.75rem;              /* jarak antar elemen */
+  padding: 1.5rem 1.5rem 1.75rem;
+}
+
+/* Judul lokasi – kecilkan jarak ke ring */
+.location-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;     /* sebelumnya 1.5rem */
+  color: #333;
+}
+
+/* Ring – hilangkan “ruang bekas badge” di bawah */
+.score-circle {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 0.25rem;    /* sebelumnya 0 auto 1.5rem */
+}
+
+/* Badge tidak dipakai lagi, boleh diset minimal / dihapus */
+.percentage-badge {
+  display: none;
+}
+
+/* ========== IMAGE DI KOLOM LOKASI ========== */
+
+.location-media {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.location-thumb img {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  object-fit: cover;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+/* saat ada link, seluruh blok jadi clickable */
+.location-link {
+  text-decoration: none;
+  color: inherit;
+  display: inline-block;
+  width: 100%;
+}
+
+.location-link:hover .location-thumb img {
+  transform: translateY(-3px) scale(1.03);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+}
+
+.location-info-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* === LAYOUT VERTICAL FOTO (GAMBAR DI ATAS TEKS) === */
+
+.location-media-vertical {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0 12px;
+}
+
+.location-cell {
+  padding-left: 24px !important;
+}
+
+.location-media-vertical .location-thumb img {
+  width: 160px;
+  height: 160px;
+  border-radius: 28px;
+  object-fit: cover;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.18);
+}
+
+.location-cell .location-media-vertical {
+  align-items: center;
+  text-align: center;
+}
+
+.location-media-vertical .location-info-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.location-link:hover .location-thumb img {
+  transform: translateY(-3px) scale(1.05);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.25);
+}
+
+.location-media-vertical:hover .location-thumb img {
+  transform: translateY(-3px) scale(1.08);
+  box-shadow: 0 14px 30px rgba(0,0,0,0.25);
 }

@@ -363,7 +363,7 @@ function populateComparisonTable(locations) {
   });
 }
 
-/* [MODAL]  Detail harian */
+/* [MODAL]  Detail harian (STEP 3 - TANPA CONFIDENCE SCORE) */
 
 /** Buka modal detail untuk 1 hari terpilih
  * @param {string} dateIso
@@ -374,7 +374,51 @@ function showDayDetails(dateIso, dayData) {
   const modal = new bootstrap.Modal(byId('detailModal'));
   byId('modal-title').textContent = `Detail: ${formatDate(dateIso)}`;
 
+  // Ambil prediksi untuk aktivitas saat ini
+  const activityPred = dayData.ml_predictions?.find(
+    p => p.label?.toLowerCase() === currentActivity
+  );
+  
+  const explanation = activityPred?.explanation || null;
+  
+  // Build explanation section (TANPA CONFIDENCE SCORE)
+  let explanationHTML = '';
+  if (explanation) {
+    const statusClass = explanation.status === "Layak" ? "badge-excellent" : "badge-poor";
+    const statusIcon = explanation.status === "Layak" ? "✓" : "✗";
+    
+    explanationHTML = `
+      <div class="explanation-section mb-4">
+        <h6 class="mb-3">
+          <span class="badge ${statusClass} fs-6 px-3 py-2">
+            ${statusIcon} ${explanation.status}
+          </span>
+        </h6>
+        <p class="text-muted mb-3 fst-italic">${explanation.summary}</p>
+        
+        <div class="reasons-grid">
+          ${explanation.reasons.map(reason => `
+            <div class="reason-card ${reason.status === 'baik' ? 'reason-good' : 'reason-bad'}">
+              <div class="reason-icon">
+                ${reason.status === 'baik' ? '✓' : '✗'}
+              </div>
+              <div class="reason-content">
+                <div class="reason-factor">${reason.factor}</div>
+                <div class="reason-value">${reason.value}</div>
+                <div class="reason-detail">${reason.detail}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      <hr class="my-4">
+    `;
+  }
+
+  // Build weather condition section (existing code)
   const content = `
+    ${explanationHTML}
+    
     <div class="detail-section">
       <h6 class="fw-bold mb-3">Kondisi Cuaca</h6>
       <div class="row g-3 row-cols-2 row-cols-md-5 align-items-stretch">
@@ -415,6 +459,7 @@ function showDayDetails(dateIso, dayData) {
         </div>
       </div>
     </div>`;
+    
   byId('modal-body').innerHTML = content;
   modal.show();
 }
